@@ -2,8 +2,9 @@
 
 ; The Machine managing the mining state
 class RunningStateMachine {
-    __New(directionChangeThreshhold := 750) {
+    __New(directionChangeThreshhold := 750, eatThreshhold := 60000) {
         this.directionChangeThreshhold := directionChangeThreshhold
+        this.eatThreshhold := eatThreshhold
         
         this.initState()
     }
@@ -23,16 +24,13 @@ class RunningStateMachine {
     }
 
     handleState(){
-        if(this.currentState.getElapsedTime() > this.directionChangeThreshhold){
-            this.currentState.stop()
-            this.directionStepper.next()
-            this.setState(RunningState(this))
-        }  
         this.currentState.handle()
     }
 
     reset() {
-        this.currentState.stop()
+        for direction in DirectionStepper.directions {
+            SendInput("{" . this.directionKeys[direction] . " up}")
+        }
         this.initState()
     }
 
@@ -93,12 +91,14 @@ class RunningStateMachineState {
     directionKey => this.context.directionKeys[this.direction]
     directionStepper => this.context.directionStepper
     direction => this.directionStepper.value
+    directionChangeThreshhold => this.context.directionChangeThreshhold
+    eatThreshhold => this.context.eatThreshhold
 }
 
 
 ; State implementations
 
-; Standing next to the ground on all directions
+; Standing in a free place
 class IdleState extends RunningStateMachineState {
     handle(){
         this.startRunning()
@@ -110,10 +110,43 @@ class IdleState extends RunningStateMachineState {
     }
 }
 
-; No Block in direction
+; Running in a direction
 class RunningState extends RunningStateMachineState {
+    __New(context) {
+        super.__New(context)
+        this.lastTimeEat := 0
+        this.lastTimeDirectionChanged := A_TickCount
+    }
+
     handle(){
+        if(this.getElapsedTimeSinceDirectionChange() > this.directionChangeThreshhold){
+            this.nextDirection()
+        }
+        if(this.getElapsedTimeSinceEat() > this.eatThreshhold){
+            this.eat()
+        } 
         this.run()
+    }
+
+    eat(){
+        Click("Right")
+        this.lastTimeEat := A_TickCount
+    }
+
+    nextDirection(){
+        this.stop()
+        this.directionStepper.next()
+        this.lastTimeDirectionChanged := A_TickCount
+    }
+
+    getElapsedTimeSinceDirectionChange(){
+        elapsedTime := A_TickCount - this.lastTimeDirectionChanged
+        return elapsedTime
+    }
+
+    getElapsedTimeSinceEat(){
+        elapsedTime := A_TickCount - this.lastTimeEat
+        return elapsedTime
     }
 }
 
